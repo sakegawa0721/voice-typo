@@ -402,9 +402,9 @@
       <div class="tb-section-title">ブラシ</div>
       <div class="tb-row">
         <span class="tb-label">サイズ</span>
-        <input type="range" id="sl-size" min="10" max="150" value="60"
+        <input type="range" id="sl-size" min="10" max="150" value="15"
           oninput="brushSize=+this.value; document.getElementById('v-size').textContent=this.value">
-        <span class="tb-val" id="v-size">60</span>
+        <span class="tb-val" id="v-size">15</span>
       </div>
       <div class="tb-row">
         <span class="tb-label">密度</span>
@@ -793,7 +793,7 @@ camera.position.set(0,0,100);
 // ============================================================
 let backgroundColor = '#e4e4e4';
 let bgColorIndex = 0;
-let brushSize = 60;
+let brushSize = 15;
 let brushOpacity = 0.72;
 let morphInterval = 375;
 let brushLineWidth = 1.2;
