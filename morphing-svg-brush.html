@@ -1,0 +1,1770 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Morphing SVG Brush</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #e4e4e4; }
+  #app { width: 100vw; height: 100vh; position: relative; cursor: none; }
+  canvas { display: block; }
+
+  #toolbar {
+    position: absolute;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    align-items: stretch;
+    z-index: 50;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    user-select: none;
+    background: rgba(20,20,20,0.78);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    overflow: hidden;
+    min-width: 210px;
+    color: #e4e4e4;
+  }
+  .tb-section {
+    padding: 8px 12px 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .tb-section:last-child { border-bottom: none; }
+  .tb-section-title {
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.35;
+    margin-bottom: 7px;
+  }
+  .tb-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 5px;
+  }
+  .tb-row:last-child { margin-bottom: 0; }
+  .tb-label {
+    opacity: 0.55;
+    letter-spacing: 0.04em;
+    font-size: 10px;
+    width: 56px;
+    flex-shrink: 0;
+    text-align: right;
+  }
+  .tb-val {
+    font-size: 10px;
+    opacity: 0.8;
+    width: 32px;
+    text-align: left;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+  }
+  .tb-btn {
+    padding: 4px 10px;
+    border: 1px solid rgba(255,255,255,0.2);
+    background: transparent;
+    color: #e4e4e4;
+    font-size: 10px;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    border-radius: 3px;
+    opacity: 0.75;
+    transition: opacity 0.15s, background 0.15s;
+    flex: 1;
+  }
+  .tb-btn:hover { opacity: 1; background: rgba(255,255,255,0.08); }
+  .tb-btn.active { opacity: 1; background: rgba(255,255,255,0.85); color: #111; }
+
+  input[type=range] {
+    flex: 1;
+    height: 3px;
+    accent-color: #e4e4e4;
+    cursor: pointer;
+    background: rgba(255,255,255,0.15);
+    border-radius: 2px;
+    appearance: none;
+    -webkit-appearance: none;
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: #e4e4e4;
+    cursor: pointer;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: #e4e4e4;
+    cursor: pointer;
+    border: none;
+  }
+
+  #info {
+    position: absolute;
+    bottom: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    opacity: 0.5;
+    pointer-events: none;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  /* ===== LEFT PANEL ===== */
+  #panel {
+    position: absolute;
+    top: 0; left: 0;
+    width: 220px;
+    height: 100vh;
+    background: rgba(20,20,20,0.82);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    display: flex;
+    flex-direction: column;
+    z-index: 100;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    color: #e4e4e4;
+    transition: transform 0.3s cubic-bezier(.4,0,.2,1);
+    border-right: 1px solid rgba(255,255,255,0.08);
+    user-select: none;
+  }
+  #panel.collapsed { transform: translateX(-220px); }
+
+  #panel-toggle {
+    position: absolute;
+    top: 50%;
+    left: 220px;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 48px;
+    background: rgba(20,20,20,0.82);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-left: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #e4e4e4;
+    font-size: 10px;
+    border-radius: 0 4px 4px 0;
+    transition: background 0.15s;
+    backdrop-filter: blur(12px);
+  }
+  #panel-toggle:hover { background: rgba(40,40,40,0.9); }
+
+  #panel-header {
+    padding: 14px 14px 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    flex-shrink: 0;
+  }
+  #panel-title {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.5;
+    margin-bottom: 10px;
+  }
+
+  #btn-add-svg {
+    width: 100%;
+    padding: 7px 0;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #e4e4e4;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  #btn-add-svg:hover { background: rgba(255,255,255,0.15); }
+
+  #panel-info {
+    font-size: 10px;
+    opacity: 0.4;
+    margin-top: 8px;
+    line-height: 1.5;
+  }
+
+  #shape-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+  }
+  #shape-list::-webkit-scrollbar { width: 4px; }
+  #shape-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+
+  .shape-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    cursor: grab;
+    transition: background 0.1s;
+    position: relative;
+  }
+  .shape-item:hover { background: rgba(255,255,255,0.06); }
+  .shape-item.dragging { opacity: 0.4; background: rgba(255,255,255,0.1); }
+  .shape-item.drag-over-top::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 8px; right: 8px;
+    height: 2px;
+    background: #009dff;
+    border-radius: 1px;
+  }
+  .shape-item.drag-over-bottom::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 8px; right: 8px;
+    height: 2px;
+    background: #009dff;
+    border-radius: 1px;
+  }
+  .shape-item.disabled { opacity: 0.3; }
+
+  .shape-drag-handle {
+    font-size: 12px;
+    opacity: 0.3;
+    cursor: grab;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+
+  .shape-preview {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    background: rgba(255,255,255,0.05);
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255,255,255,0.08);
+    overflow: hidden;
+  }
+  .shape-preview svg { width: 28px; height: 28px; }
+
+  .shape-name {
+    flex: 1;
+    font-size: 11px;
+    opacity: 0.8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .shape-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .shape-act-btn {
+    width: 22px;
+    height: 22px;
+    background: transparent;
+    border: none;
+    color: #e4e4e4;
+    cursor: pointer;
+    border-radius: 3px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.4;
+    transition: opacity 0.15s, background 0.15s;
+    padding: 0;
+  }
+  .shape-act-btn:hover { opacity: 1; background: rgba(255,255,255,0.1); }
+  .shape-act-btn.on { opacity: 1; }
+
+  .shape-num {
+    font-size: 9px;
+    opacity: 0.25;
+    width: 14px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  #panel-footer {
+    padding: 10px 14px 14px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    flex-shrink: 0;
+  }
+  #btn-reset-shapes {
+    width: 100%;
+    padding: 6px 0;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.12);
+    color: #e4e4e4;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background 0.15s;
+    opacity: 0.6;
+  }
+  #btn-reset-shapes:hover { background: rgba(255,255,255,0.08); opacity: 1; }
+
+  #file-input { display: none; }
+
+  /* カラースウォッチ */
+  .color-swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.2);
+    cursor: pointer;
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+    display: block;
+  }
+  .color-swatch input[type=color] {
+    position: absolute;
+    width: 200%;
+    height: 200%;
+    top: -50%;
+    left: -50%;
+    opacity: 0;
+    cursor: pointer;
+    border: none;
+    padding: 0;
+  }
+
+  /* シェイプ名+番号の縦並び */
+  .shape-center {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .shape-num-label {
+    font-size: 9px;
+    opacity: 0.3;
+    line-height: 1;
+  }
+  .shape-act-btn.del:hover { color: #ff6b6b; }
+
+  /* ドロップゾーン強調 */
+  #panel.drag-target { border-right-color: rgba(0,157,255,0.4); }
+</style>
+</head>
+<body>
+<input type="file" id="file-input" accept=".svg" multiple>
+
+<div id="panel">
+  <div id="panel-toggle" onclick="togglePanel()" title="パネル開閉">&#x276F;</div>
+  <div id="panel-header">
+    <div id="panel-title">SVG シェイプ</div>
+    <button id="btn-add-svg" onclick="document.getElementById('file-input').click()">
+      <span>＋ SVGを追加</span>
+    </button>
+    <div id="panel-info">ドラッグで並び替え・SVGをここにドロップも可</div>
+  </div>
+  <div id="shape-list"></div>
+  <div id="panel-footer">
+    <button id="btn-reset-shapes" onclick="resetToDefault()">デフォルトに戻す</button>
+  </div>
+</div>
+
+<div id="app">
+  <canvas id="three-canvas"></canvas>
+
+  <div id="toolbar">
+    <div class="tb-section">
+      <div class="tb-section-title">コントロール</div>
+      <div class="tb-row">
+        <button class="tb-btn active" id="btn-auto" onclick="toggleAutoMode()">自動 ON</button>
+        <button class="tb-btn" onclick="cycleBg()">背景</button>
+        <button class="tb-btn" onclick="clearAll()">クリア</button>
+      </div>
+    </div>
+    <div class="tb-section">
+      <div class="tb-section-title">ブラシ</div>
+      <div class="tb-row">
+        <span class="tb-label">サイズ</span>
+        <input type="range" id="sl-size" min="10" max="150" value="60"
+          oninput="brushSize=+this.value; document.getElementById('v-size').textContent=this.value">
+        <span class="tb-val" id="v-size">60</span>
+      </div>
+      <div class="tb-row">
+        <span class="tb-label">密度</span>
+        <input type="range" id="sl-density" min="1" max="100" value="50"
+          oninput="brushDensity=+this.value; document.getElementById('v-density').textContent=this.value">
+        <span class="tb-val" id="v-density">50</span>
+      </div>
+      <div class="tb-row">
+        <span class="tb-label">線の太さ</span>
+        <input type="range" id="sl-lw" min="0.5" max="8" step="0.1" value="1.2"
+          oninput="brushLineWidth=+this.value; document.getElementById('v-lw').textContent=(+this.value).toFixed(1)">
+        <span class="tb-val" id="v-lw">1.2</span>
+      </div>
+      <div class="tb-row">
+        <span class="tb-label">不透明度</span>
+        <input type="range" id="sl-op" min="0.05" max="1" step="0.01" value="0.72"
+          oninput="brushOpacity=+this.value; document.getElementById('v-op').textContent=Math.round(this.value*100)+'%'">
+        <span class="tb-val" id="v-op">72%</span>
+      </div>
+    </div>
+    <div class="tb-section">
+      <div class="tb-section-title">モーフィング</div>
+      <div class="tb-row">
+        <span class="tb-label">切替距離</span>
+        <input type="range" id="sl-ms" min="10" max="800" value="375"
+          oninput="morphInterval=+this.value; document.getElementById('v-ms').textContent=fmtMorphSpeed(this.value)">
+        <span class="tb-val" id="v-ms">中</span>
+      </div>
+      <div class="tb-row">
+        <span class="tb-label">変形速度</span>
+        <input type="range" id="sl-mt" min="50" max="3000" step="50" value="600"
+          oninput="morphTimeDuration=+this.value; document.getElementById('v-mt').textContent=fmtMorphDuration(this.value)">
+        <span class="tb-val" id="v-mt">中</span>
+      </div>
+    </div>
+  </div>
+  <div id="info">マウスを動かしてSVGブラシを描く</div>
+</div>
+
+<!-- Three.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineGeometry.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineMaterial.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/Line2.js"></script>
+
+<script>
+// ============================================================
+// CONSTANTS (from constants.ts)
+// ============================================================
+const COLORS = ['#e4e4e4','#5f328c','#009dff','#ffccff','#340072','#eb3341'];
+const FORBIDDEN_COLOR_MAP = {
+  '#5f328c': ['#eb3341','#e4e4e4','#009dff'],
+  '#eb3341': ['#009dff','#340072','#e4e4e4'],
+  '#009dff': ['#eb3341','#340072','#5f328c'],
+  '#340072': ['#e4e4e4','#eb3341'],
+  '#e4e4e4': ['#ffccff','#009dff'],
+  '#ffccff': ['#009dff','#e4e4e4'],
+};
+const BG_COLORS = ['#e4e4e4','#5f328c','#340072','#1a1a1a'];
+const DEFAULT_SHAPES_DEF = [
+  { id:'s1', name:'文字1', paths:['M311.65,364.8c34.59,0,72.18,17.62,72.18,56.93s-41.25,59.72-75.62,66.6c-2.79-5.37-6.87-10.74-11.17-15.04,27.93-4.51,67.46-17.19,67.46-51.56,0-21.05-15.47-33.73-34.37-38.88-9.45,21.7-25.78,48.34-43.4,64.45,1.72,5.58,3.22,9.45,5.8,14.61-6.01,3.65-9.45,5.8-15.47,9.88-2.15-4.73-3.22-7.3-4.94-12.46-11.82,8.38-25.56,16.54-40.39,16.54-17.19,0-24.49-14.61-24.49-29.86,0-16.97,7.52-32.87,18.48-45.33,10.1-11.6,23.2-19.98,37.17-25.99.43-8.81,1.07-17.83,2.15-26.21-8.16.43-16.11.86-24.28.86-7.09,0-13.96-.21-20.84-.86l-.21-17.83c10.1,1.72,20.41,2.15,30.72,2.15,5.8,0,11.39-.21,16.97-.64,2.36-13.75,5.59-27.28,9.45-40.82l19.12,6.23c2.36.86,3.44,1.5,3.44,3.01,0,1.93-3.22,2.79-4.73,3.01-3.87,9.02-6.23,17.62-8.38,27.07,22.99-2.15,45.54-7.3,66.81-16.11l4.51,17.4c-24.06,7.52-48.98,12.46-74.12,15.04-1.07,5.37-2.15,13.53-3.01,21.91,10.31-2.58,20.62-4.08,31.15-4.08ZM262.67,392.95c-18.05,10.1-37.81,29.86-37.81,51.99,0,7.09,3.65,13.53,11.39,13.53,10.31,0,24.06-8.38,31.58-15.04-3.65-16.54-4.73-33.51-5.16-50.48ZM282.65,429.04c11.82-12.46,23.42-32.44,29.86-48.55-12.89,0-22.13,1.5-33.3,5.16,0,14.61.86,29.22,3.44,43.4Z'], color:'#5f328c' },
+  { id:'s2', name:'文字2', paths:['M307.36,294.12l21.05,5.16c1.72.43,4.08,1.07,4.08,3.01,0,2.36-2.36,2.79-4.73,3.01-2.15,9.45-4.08,18.91-6.02,28.79,37.81,3.65,64.23,29.22,64.23,67.89,0,49.2-39.74,71.97-83.14,79.7-2.79-6.23-5.37-10.74-9.67-16.11,18.48-2.15,36.74-7.95,51.99-18.9,15.04-10.96,22.13-26.85,22.13-45.11,0-30.08-20.41-47.69-48.98-51.13-6.66,27.5-16.76,55-33.94,77.77,3.65,5.37,7.73,10.74,11.6,15.25-6.01,4.94-12.67,11.17-15.47,14.18-3.22-4.73-6.23-9.24-9.24-14.18-10.96,10.96-24.28,22.13-40.6,22.13-19.33,0-28.14-16.33-28.14-33.73,0-25.35,13.96-49.62,31.79-67.03-5.8-17.19-10.31-34.8-14.18-52.42l19.55-6.02c1.72,16.33,4.94,30.51,9.45,46.19,16.33-11.6,33.73-17.4,53.49-18.91,2.36-13.1,4.3-26.21,4.73-39.53ZM240.33,381.56c-11.82,12.89-20.62,30.72-20.62,48.55,0,8.59,2.79,17.19,12.89,17.19,10.74,0,22.77-12.03,29.43-19.55-8.16-14.82-15.47-30.29-21.7-46.19ZM254.51,368.89c5.59,15.68,11.6,28.57,19.76,42.96,12.67-18.47,19.98-39.96,25.14-61.66-17.62,1.72-30.94,8.16-44.9,18.69Z'], color:'#009dff' },
+  { id:'s3', name:'文字3', paths:['M351.83,344.61l21.05,6.88c1.5.43,2.79.86,2.79,2.58,0,2.36-2.36,2.58-4.3,2.79-1.72,15.04-6.02,33.51-11.17,47.69,12.25,6.87,23.63,14.18,34.59,22.99-3.22,4.51-7.95,11.6-11.39,16.97-9.88-8.59-18.91-15.25-30.08-21.91-10.31,23.63-29.22,48.55-50.91,62.73-2.79-4.08-9.88-10.31-14.82-13.32,22.34-11.6,39.96-35.45,49.84-58.22-19.12-9.45-33.94-15.25-55-19.12-12.46,27.5-19.55,40.82-24.71,49.2-6.23,10.1-14.39,19.33-26.64,19.33-16.11,0-27.71-15.68-27.71-30.94,0-19.55,12.89-38.24,29.86-47.05,12.46-6.44,24.06-8.16,38.02-8.16,4.73-11.17,19.98-45.54,24.92-55-20.19,5.37-40.82,8.59-61.44,10.53l-4.08-19.98c22.77.21,59.51-3.44,80.13-13.1l13.32,10.96c-6.23,8.16-9.67,14.39-14.39,23.85-7.09,13.96-15.04,29.65-20.41,44.25,19.12,3.65,36.74,9.88,54.57,18.05,5.37-17.19,7.73-34.16,7.95-51.99ZM237.97,401.75c-10.1,6.45-17.62,19.12-17.62,31.15,0,8.16,5.16,12.89,10.1,12.89,6.02,0,10.1-5.8,18.05-19.76,5.8-10.31,10.74-20.84,15.25-31.58-9.24,0-17.83,2.36-25.78,7.3Z'], color:'#ffccff' },
+  { id:'s4', name:'文字4', paths:['M271.05,331.72l7.3,8.38c-5.16,8.59-10.31,17.83-16.54,29.43,8.59-7.73,16.33-14.61,25.78-21.48,13.53-9.88,25.56-16.11,42.75-16.11,14.39,0,27.71,7.09,34.37,19.34,6.66,12.24,8.81,28.36,8.81,42.11,0,12.03-1.07,24.28-2.36,36.31,8.16,4.94,17.62,11.17,24.28,17.83-3.44,4.51-6.88,11.17-9.45,16.33-6.45-6.88-11.6-11.39-19.76-16.11-7.09,20.62-21.7,30.08-43.18,30.08-18.9,0-38.24-9.02-38.24-30.51,0-19.76,18.69-31.58,36.95-31.58,10.31,0,22.34,3.44,32.01,6.88,1.07-7.52,1.5-15.04,1.5-22.77,0-12.03-.86-29.43-7.09-39.96-4.73-7.73-12.46-10.74-21.48-10.74-21.91,0-53.71,27.93-67.67,44.04-.43,14.18-.86,30.08-.86,45.33,0,13.96.64,29,1.29,41.89l-19.76.64c.64-12.25,1.07-38.88,1.29-63.8-10.53,15.04-19.33,28.14-27.07,40.39l-14.39-13.11c15.68-19.76,31.79-42.96,43.18-65.52v-22.13c-14.82,2.58-24.92,4.51-36.09,7.73l-3.01-20.19c14.39-.64,25.35-2.15,39.31-4.94.21-10.1.43-23.42.43-35.23,0-3.01,0-6.23-.21-9.24l20.19,3.44c2.79.43,3.65,1.07,3.65,2.36,0,2.58-2.58,3.87-4.73,4.51-.43,10.1-1.07,21.05-1.72,30.08,3.65-1.07,6.87-2.15,10.53-3.65ZM323.04,431.83c-9.88,0-21.48,4.73-21.48,16.11,0,10.74,12.03,14.18,20.84,14.18,15.25,0,23.85-8.16,27.93-22.34-8.59-4.72-17.4-7.95-27.28-7.95Z'], color:'#340072' },
+  { id:'s5', name:'文字5', paths:['M306.07,409.67c25.35,5.59,58.65,22.56,78.41,39.53-5.59,6.88-9.45,12.03-12.67,16.54-16.97-15.47-42.11-31.79-64.23-37.81.21,2.79.21,5.37.21,7.95,0,30.08-13.1,40.39-42.32,40.39-11.17,0-24.06-1.93-33.51-7.95-9.67-6.02-17.19-16.11-17.19-27.93,0-10.1,7.52-19.76,15.68-25.35,10.74-7.52,27.07-10.31,39.96-10.31,4.51,0,11.82.64,16.11,1.29-1.07-14.61-2.15-33.3-2.15-49.2,0-14.61,0-29.43-.64-44.25-.43-9.02-1.07-14.61-2.79-22.13l24.06,4.08c2.36.43,4.3,1.07,4.3,3.22s-1.72,2.79-4.73,3.65c-.86,11.39-1.29,22.77-1.5,34.37,25.56-.64,49.41-2.58,73.9-10.31-.64,5.16-1.07,10.74-1.07,16.11,0,1.29,0,2.79.21,4.08-21.7,5.8-50.7,7.73-73.26,8.16,0,19.76,1.07,44.9,3.22,55.86ZM268.9,421.05c-11.82,0-36.52,4.08-36.52,19.76s20.62,19.12,32.65,19.12c14.61,0,24.06-5.59,24.06-21.48,0-4.94-.43-11.17-.86-15.25-6.45-1.29-12.67-2.15-19.33-2.15Z'], color:'#eb3341' },
+];
+
+// ============================================================
+// SVG PATH PARSING (replaces SVGLoader for pure JS)
+// Adapted from svgUtils.ts logic
+// ============================================================
+const SAMPLING_RESOLUTION = 120;
+
+// Simple SVG path parser → array of THREE.Vector2
+function parseSVGPathToVector2Array(d) {
+  const pts = [];
+  const cmds = d.match(/[MmLlHhVvCcSsQqTtAaZz][^MmLlHhVvCcSsQqTtAaZz]*/g) || [];
+  let cx = 0, cy = 0, prevCX = 0, prevCY = 0, startX = 0, startY = 0;
+  let lastCmd = '';
+
+  function push(x, y) { pts.push(new THREE.Vector2(x, y)); }
+
+  function sampleBezierCubic(x1,y1, x2,y2, x3,y3, x4,y4, n) {
+    for (let k = 1; k <= n; k++) {
+      const t = k/n, mt = 1-t;
+      push(mt*mt*mt*x1+3*mt*mt*t*x2+3*mt*t*t*x3+t*t*t*x4,
+           mt*mt*mt*y1+3*mt*mt*t*y2+3*mt*t*t*y3+t*t*t*y4);
+    }
+  }
+  function sampleBezierQuad(x1,y1, x2,y2, x3,y3, n) {
+    for (let k = 1; k <= n; k++) {
+      const t = k/n, mt = 1-t;
+      push(mt*mt*x1+2*mt*t*x2+t*t*x3, mt*mt*y1+2*mt*t*y2+t*t*y3);
+    }
+  }
+  function parseArgs(s) { return s.trim().split(/[\s,]+/).filter(Boolean).map(Number); }
+
+  for (const cmd of cmds) {
+    const type = cmd[0];
+    const rel = type === type.toLowerCase() && type !== 'Z' && type !== 'z';
+    const upper = type.toUpperCase();
+    const args = parseArgs(cmd.slice(1));
+    let i = 0;
+    const ox = rel ? cx : 0, oy = rel ? cy : 0;
+
+    if (upper === 'M') {
+      while (i < args.length) {
+        cx = args[i] + (i===0?ox:cx*(1-0)+cx*0); cy = args[i+1] + (i===0?oy:cy);
+        // actually for M: first pair is move, rest are implicit L
+        if (i === 0) { cx = args[0]+(rel?cx-args[0]:0); cy = args[1]+(rel?cy-args[1]:0); cx=args[0]+(rel?0:0); cy=args[1]+(rel?0:0); }
+        // fix: simple
+        if (i === 0) { cx = rel ? prevCX+args[0] : args[0]; cy = rel ? prevCY+args[1] : args[1]; startX=cx; startY=cy; }
+        else { cx = rel ? cx+args[i] : args[i]; cy = rel ? cy+args[i+1] : args[i+1]; }
+        push(cx, cy); i+=2;
+      }
+      lastCmd = upper;
+      continue;
+    }
+    if (upper === 'L') {
+      while (i < args.length) {
+        const nx = rel?cx+args[i]:args[i]; const ny = rel?cy+args[i+1]:args[i+1];
+        cx=nx; cy=ny; push(cx,cy); i+=2;
+      }
+    } else if (upper === 'H') {
+      while (i < args.length) { cx = rel?cx+args[i]:args[i]; push(cx,cy); i++; }
+    } else if (upper === 'V') {
+      while (i < args.length) { cy = rel?cy+args[i]:args[i]; push(cx,cy); i++; }
+    } else if (upper === 'C') {
+      while (i < args.length) {
+        const [ax,ay,bx,by,ex,ey] = [
+          rel?cx+args[i]:args[i], rel?cy+args[i+1]:args[i+1],
+          rel?cx+args[i+2]:args[i+2], rel?cy+args[i+3]:args[i+3],
+          rel?cx+args[i+4]:args[i+4], rel?cy+args[i+5]:args[i+5]
+        ];
+        sampleBezierCubic(cx,cy,ax,ay,bx,by,ex,ey,12);
+        prevCX=bx; prevCY=by; cx=ex; cy=ey; i+=6;
+      }
+    } else if (upper === 'S') {
+      while (i < args.length) {
+        const rx = lastCmd==='C'||lastCmd==='S' ? 2*cx-prevCX : cx;
+        const ry = lastCmd==='C'||lastCmd==='S' ? 2*cy-prevCY : cy;
+        const bx = rel?cx+args[i]:args[i]; const by = rel?cy+args[i+1]:args[i+1];
+        const ex = rel?cx+args[i+2]:args[i+2]; const ey = rel?cy+args[i+3]:args[i+3];
+        sampleBezierCubic(cx,cy,rx,ry,bx,by,ex,ey,12);
+        prevCX=bx; prevCY=by; cx=ex; cy=ey; i+=4;
+      }
+    } else if (upper === 'Q') {
+      while (i < args.length) {
+        const ax=rel?cx+args[i]:args[i], ay=rel?cy+args[i+1]:args[i+1];
+        const ex=rel?cx+args[i+2]:args[i+2], ey=rel?cy+args[i+3]:args[i+3];
+        sampleBezierQuad(cx,cy,ax,ay,ex,ey,12);
+        prevCX=ax; prevCY=ay; cx=ex; cy=ey; i+=4;
+      }
+    } else if (upper === 'A') {
+      while (i < args.length) {
+        const ex=rel?cx+args[i+5]:args[i+5], ey=rel?cy+args[i+6]:args[i+6];
+        // Simple linearization
+        const steps = 12;
+        for (let k=1;k<=steps;k++) push(cx+(ex-cx)*k/steps, cy+(ey-cy)*k/steps);
+        cx=ex; cy=ey; i+=7;
+      }
+    } else if (upper === 'Z') {
+      push(startX, startY); cx=startX; cy=startY;
+    }
+    lastCmd = upper;
+    prevCX = cx; prevCY = cy;
+  }
+  return pts;
+}
+
+function fixParseSVGPath(d) {
+  // Re-implement M correctly
+  const pts = [];
+  let cx = 0, cy = 0, startX = 0, startY = 0;
+  let lastCtrlX = cx, lastCtrlY = cy, lastCmd = '';
+
+  function push(x,y){ pts.push(new THREE.Vector2(x, y)); }
+  function cubic(x1,y1,x2,y2,ex,ey,n){
+    for(let k=1;k<=n;k++){const t=k/n,u=1-t;push(u*u*u*cx+3*u*u*t*x1+3*u*t*t*x2+t*t*t*ex,u*u*u*cy+3*u*u*t*y1+3*u*t*t*y2+t*t*t*ey);}
+  }
+  function quad(x1,y1,ex,ey,n){
+    for(let k=1;k<=n;k++){const t=k/n,u=1-t;push(u*u*cx+2*u*t*x1+t*t*ex,u*u*cy+2*u*t*y1+t*t*ey);}
+  }
+
+  const tokenRe = /([MmLlHhVvCcSsQqTtAaZz])|([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)/g;
+  const tokens = [];
+  let m;
+  while((m=tokenRe.exec(d))!==null) tokens.push(m[0]);
+
+  let i = 0;
+  while (i < tokens.length) {
+    const cmd = tokens[i++];
+    if (!/[MmLlHhVvCcSsQqTtAaZz]/.test(cmd)) continue;
+    const upper = cmd.toUpperCase();
+    const rel = cmd !== upper;
+
+    const getN = (n) => {
+      const arr = [];
+      for(let j=0;j<n;j++) arr.push(+tokens[i++]);
+      return arr;
+    };
+
+    if (upper === 'Z') {
+      push(startX, startY);
+      cx=startX; cy=startY;
+      lastCmd = upper;
+      continue;
+    }
+
+    // Repeat while we have numbers
+    let first = true;
+    while (i < tokens.length && !/[MmLlHhVvCcSsQqTtAaZz]/.test(tokens[i])) {
+      if (upper === 'M') {
+        const [dx,dy] = getN(2);
+        cx=rel?cx+dx:dx; cy=rel?cy+dy:dy;
+        if(first){ startX=cx; startY=cy; }
+        push(cx,cy);
+        first=false;
+      } else if (upper === 'L') {
+        const [dx,dy]=getN(2); cx=rel?cx+dx:dx; cy=rel?cy+dy:dy; push(cx,cy);
+      } else if (upper === 'H') {
+        const [dx]=getN(1); cx=rel?cx+dx:dx; push(cx,cy);
+      } else if (upper === 'V') {
+        const [dy]=getN(1); cy=rel?cy+dy:dy; push(cx,cy);
+      } else if (upper === 'C') {
+        const [x1,y1,x2,y2,ex,ey]=getN(6);
+        const ax=rel?cx+x1:x1,ay=rel?cy+y1:y1,bx=rel?cx+x2:x2,by=rel?cy+y2:y2,nx=rel?cx+ex:ex,ny=rel?cy+ey:ey;
+        cubic(ax,ay,bx,by,nx,ny,12);
+        lastCtrlX=bx;lastCtrlY=by;cx=nx;cy=ny;
+      } else if (upper === 'S') {
+        const [x2,y2,ex,ey]=getN(4);
+        const rx=(lastCmd==='C'||lastCmd==='S')?2*cx-lastCtrlX:cx;
+        const ry=(lastCmd==='C'||lastCmd==='S')?2*cy-lastCtrlY:cy;
+        const bx=rel?cx+x2:x2,by=rel?cy+y2:y2,nx=rel?cx+ex:ex,ny=rel?cy+ey:ey;
+        cubic(rx,ry,bx,by,nx,ny,12);
+        lastCtrlX=bx;lastCtrlY=by;cx=nx;cy=ny;
+      } else if (upper === 'Q') {
+        const [x1,y1,ex,ey]=getN(4);
+        const ax=rel?cx+x1:x1,ay=rel?cy+y1:y1,nx=rel?cx+ex:ex,ny=rel?cy+ey:ey;
+        quad(ax,ay,nx,ny,12);
+        lastCtrlX=ax;lastCtrlY=ay;cx=nx;cy=ny;
+      } else if (upper === 'A') {
+        const [rx,ry,xr,laf,sf,ex,ey]=getN(7);
+        const nx=rel?cx+ex:ex,ny=rel?cy+ey:ey;
+        const steps=12;
+        for(let k=1;k<=steps;k++) push(cx+(nx-cx)*k/steps,cy+(ny-cy)*k/steps);
+        cx=nx;cy=ny;
+      } else {
+        break;
+      }
+      lastCmd=upper;
+    }
+    if(upper==='M') lastCmd=upper;
+    else lastCmd=upper;
+  }
+  return pts;
+}
+
+function getPathLength2(points) {
+  let len = 0;
+  for (let i = 0; i < points.length-1; i++) len += points[i].distanceTo(points[i+1]);
+  if (points.length > 1 && points[0].distanceTo(points[points.length-1]) > 0.01)
+    len += points[points.length-1].distanceTo(points[0]);
+  return len;
+}
+
+function resamplePoints(points, sampleCount) {
+  if (points.length < 2) return points;
+  const closed = points.map(p=>p.clone());
+  if (closed[0].distanceTo(closed[closed.length-1]) > 0.1) closed.push(closed[0].clone());
+  const totalLength = getPathLength2(closed);
+  const step = totalLength / sampleCount;
+  const resampled = [closed[0].clone()];
+  let currentDist = 0, nextSampleDist = step;
+  for (let i=0;i<closed.length-1 && resampled.length<sampleCount;i++){
+    const p1=closed[i], p2=closed[i+1];
+    const segLen = p1.distanceTo(p2);
+    if (segLen < 0.0001) continue;
+    while (currentDist+segLen >= nextSampleDist) {
+      const ratio = (nextSampleDist-currentDist)/segLen;
+      resampled.push(new THREE.Vector2().lerpVectors(p1,p2,ratio));
+      nextSampleDist += step;
+      if (resampled.length >= sampleCount) break;
+    }
+    currentDist += segLen;
+    if (resampled.length >= sampleCount) break;
+  }
+  while (resampled.length < sampleCount) resampled.push(closed[closed.length-1].clone());
+  return resampled;
+}
+
+function alignPoints(points) {
+  if (points.length === 0) return points;
+  let area = 0;
+  for (let i=0;i<points.length;i++) {
+    const j=(i+1)%points.length;
+    area += (points[j].x-points[i].x)*(points[j].y+points[i].y);
+  }
+  if (area > 0) points.reverse();
+  let minAngleDist = Infinity, startIndex = 0;
+  points.forEach((p,i)=>{
+    const angle = Math.atan2(p.y, p.x);
+    let dist = Math.abs(angle-(-Math.PI/2));
+    if (dist > Math.PI) dist = 2*Math.PI-dist;
+    if (dist < minAngleDist) { minAngleDist=dist; startIndex=i; }
+  });
+  return [...points.slice(startIndex), ...points.slice(0, startIndex)];
+}
+
+function normalizePathToPoints(pathString) {
+  try {
+    const rawPts = fixParseSVGPath(pathString);
+    if (rawPts.length < 3) return [];
+    const box = new THREE.Box2().setFromPoints(rawPts);
+    const center = box.getCenter(new THREE.Vector2());
+    // SVG は Y下向き、Three.js は Y上向き → Y を反転してセンタリング
+    const centered = rawPts.map(p => new THREE.Vector2(p.x - center.x, -(p.y - center.y)));
+    return resamplePoints(centered, SAMPLING_RESOLUTION);
+  } catch(e) {
+    console.error('normalizePathToPoints error', e);
+    return [];
+  }
+}
+
+function getOptimalRotatedPoints(pointsA, pointsB) {
+  if (!pointsA||!pointsB||pointsA.length!==pointsB.length||pointsA.length===0) return pointsB;
+  const len = pointsA.length;
+  let minDist=Infinity, bestOffset=0, bestWinding=1;
+  const ptsBRev = [...pointsB].reverse();
+
+  for (let offset=0;offset<len;offset++){
+    let d=0;
+    for(let i=0;i<len;i++){const dx=pointsA[i].x-pointsB[(i+offset)%len].x,dy=pointsA[i].y-pointsB[(i+offset)%len].y;d+=dx*dx+dy*dy;}
+    if(d<minDist){minDist=d;bestOffset=offset;bestWinding=1;}
+  }
+  for (let offset=0;offset<len;offset++){
+    let d=0;
+    for(let i=0;i<len;i++){const dx=pointsA[i].x-ptsBRev[(i+offset)%len].x,dy=pointsA[i].y-ptsBRev[(i+offset)%len].y;d+=dx*dx+dy*dy;}
+    if(d<minDist){minDist=d;bestOffset=offset;bestWinding=-1;}
+  }
+  const src = bestWinding===1?pointsB:ptsBRev;
+  const result=[];
+  for(let i=0;i<len;i++) result.push(src[(i+bestOffset)%len].clone());
+  return result;
+}
+
+function lerpPoints(ptsA, ptsB, alpha) {
+  if(!ptsA||ptsA.length===0) return [];
+  if(!ptsB||ptsA.length!==ptsB.length) return ptsA;
+  return ptsA.map((pA,i)=>{
+    const pB=ptsB[i];
+    const x=THREE.MathUtils.lerp(pA.x,pB.x,alpha);
+    const y=THREE.MathUtils.lerp(pA.y,pB.y,alpha);
+    return new THREE.Vector2(isFinite(x)?x:0, isFinite(y)?y:0);
+  });
+}
+
+function pointsToPath(points, scale) {
+  if(!points||points.length===0) return new THREE.Path();
+  const path = new THREE.Path();
+  path.moveTo(points[0].x*scale, points[0].y*scale);
+  for(let i=1;i<points.length;i++) path.lineTo(points[i].x*scale, points[i].y*scale);
+  path.closePath();
+  return path;
+}
+
+// ============================================================
+// THREE.JS SETUP
+// ============================================================
+const canvas = document.getElementById('three-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, preserveDrawingBuffer: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0xe4e4e4, 1);
+
+const scene = new THREE.Scene();
+const camera = new THREE.OrthographicCamera(
+  -window.innerWidth/2, window.innerWidth/2,
+  window.innerHeight/2, -window.innerHeight/2,
+  -1000, 1000
+);
+camera.position.set(0,0,100);
+
+// ============================================================
+// APP STATE
+// ============================================================
+let backgroundColor = '#e4e4e4';
+let bgColorIndex = 0;
+let brushSize = 60;
+let brushOpacity = 0.72;
+let morphInterval = 375;
+let brushLineWidth = 1.2;
+let morphTimeDuration = 600; // ms: 1文字から次へ変形するのにかかる時間
+let brushDensity = 50;       // 1-100: 大きいほど密（スタンプ間隔が小さい）
+
+function fmtMorphSpeed(v) {
+  v = +v;
+  if (v < 100) return '近い';
+  if (v < 250) return 'やや近';
+  if (v < 450) return '中';
+  if (v < 650) return 'やや遠';
+  return '遠い';
+}
+function fmtMorphDuration(v) {
+  v = +v;
+  if (v < 150) return '瞬時';
+  if (v < 400) return '速い';
+  if (v < 800) return '中';
+  if (v < 1600) return 'ゆっくり';
+  return '非常に遅';
+}
+let isDrawingActive = false;  // 自動モードではマウス描画は無効
+let isIntroActive = false;
+let isAutoMode = true;        // 自動アニメーションモード
+let autoLoopId = null;
+
+const brushJitter = { position: 3, rotation: 0, scale: 74 };
+const brushFade = { enabled: true, duration: 2600 };
+const brushFadeIn = { enabled: true, duration: 2000 };
+const brushMorphNoise = { enabled: true, strength: 0.14 };
+const brushMorphRidge = { enabled: true, strength: 0.8 };
+const brushMorphScale = { enabled: false, strength: 0.5 };
+const brushWobble = { enabled: false, strength: 5, speed: 3 };
+
+// Loaded shapes
+let loadedShapes = [];
+
+// Strokes: array of { id, points:[], size, lineWidth, opacity, threeGroup }
+let strokes = [];
+let currentStrokePoints = [];
+let currentStrokeGroup = null;
+
+let totalDistance = 0;
+let lastCursorPos = null;
+let currentStrokeSeed = Math.random()*1000;
+let currentStrokeColorRatio = 1.5 + Math.random()*0.8;
+
+// ============================================================
+// SHAPE LOADING
+// ============================================================
+function loadShapes() {
+  applyShapeDefs();
+  console.log('Loaded shapes:', loadedShapes.length);
+  if(isAutoMode) startAutoMode();
+}
+
+// ============================================================
+// COLOR HELPERS
+// ============================================================
+function getSafePalette(bg) {
+  const bgL = bg.toLowerCase();
+  return COLORS.filter(c=>{
+    const cL=c.toLowerCase();
+    return cL!==bgL && !(FORBIDDEN_COLOR_MAP[bgL]||[]).some(f=>f.toLowerCase()===cL);
+  });
+}
+
+function getColor(step, seed, palette, bg) {
+  const x = Math.sin(step*99.99+seed)*10000;
+  const rand = x-Math.floor(x);
+  const targetColorHex = '#5f328c';
+  const bgL = bg.toLowerCase();
+  if (bgL==='#e4e4e4' && palette.some(c=>c.toLowerCase()===targetColorHex)) {
+    const totalItems=palette.length;
+    const targetProb=(1/totalItems)*1.3;
+    if(rand<targetProb) return targetColorHex;
+    const otherPalette=palette.filter(c=>c.toLowerCase()!==targetColorHex);
+    if(otherPalette.length===0) return targetColorHex;
+    const nr=(rand-targetProb)/(1-targetProb);
+    return otherPalette[Math.floor(nr*otherPalette.length)];
+  }
+  return palette[Math.floor(rand*palette.length)];
+}
+
+// ============================================================
+// BRUSH POINT MESH CREATION
+// Using LineLoop with ShapeGeometry outline
+// ============================================================
+function createBrushTipMesh(point, shapes, size, lineWidth, screenScale, overrideFactor) {
+  try {
+    if(!shapes||shapes.length===0) return null;
+    const fromIdx = point.morph.fromIndex % shapes.length;
+    const toIdx   = point.morph.toIndex   % shapes.length;
+    const shapeA  = shapes[fromIdx];
+    const shapeB  = shapes[toIdx];
+    if(!shapeA||!shapeA.normalizedPoints) return null;
+
+    const ptsA = shapeA.normalizedPoints;
+    let ptsB = (shapeB&&shapeB.normalizedPoints&&shapeB.normalizedPoints.length===ptsA.length)
+                ? shapeB.normalizedPoints : ptsA;
+    if (ptsB !== ptsA) ptsB = getOptimalRotatedPoints(ptsA, ptsB);
+
+    let scaleMultiplier = 1;
+    if (brushMorphScale.enabled) {
+      const useFactor = (overrideFactor !== undefined) ? overrideFactor : point.morph.factor;
+      const reduction = Math.sin(useFactor*Math.PI)*brushMorphScale.strength;
+      scaleMultiplier = Math.max(0.1, 1-reduction);
+    }
+
+    const factor = (overrideFactor !== undefined) ? overrideFactor : point.morph.factor;
+    let interpolated = lerpPoints(ptsA, ptsB, factor);
+
+    // Noise
+    if (brushMorphNoise.enabled && brushMorphNoise.strength > 0) {
+      const noiseEnv = Math.sin(point.morph.factor*Math.PI);
+      const strength = brushMorphNoise.strength*noiseEnv;
+      const rX = Math.sin(point.noiseSeed*0.1)*43758.5453;
+      const dx = (rX-Math.floor(rX)-0.5)*2*strength*10;
+      for(let i=0;i<interpolated.length;i++) interpolated[i].x += dx;
+    }
+    // Ridge
+    if (brushMorphRidge.enabled && brushMorphRidge.strength > 0) {
+      const noiseEnv = Math.sin(point.morph.factor*Math.PI);
+      const strength = brushMorphRidge.strength*noiseEnv;
+      for(let i=0;i<interpolated.length;i++){
+        const wave = Math.sin(i*0.5+point.noiseSeed);
+        const dx = Math.cos(i*0.1+point.noiseSeed)*strength*wave;
+        interpolated[i].x += dx;
+      }
+    }
+
+    const hasNaN = interpolated.some(p=>!isFinite(p.x)||!isFinite(p.y));
+    if(hasNaN||interpolated.length<3) return null;
+
+    const finalScale = point.scale*(size/10)*scaleMultiplier*screenScale;
+
+    // Build positions array for Line2 (flat: x,y,z,x,y,z,...)
+    const positions = [];
+    for(const p of interpolated){
+      positions.push(p.x*finalScale, p.y*finalScale, 0);
+    }
+    // Close the loop
+    positions.push(interpolated[0].x*finalScale, interpolated[0].y*finalScale, 0);
+
+    let mesh;
+    if(typeof THREE.LineGeometry !== 'undefined' && typeof THREE.Line2 !== 'undefined') {
+      // Use Line2 for thick lines
+      const geom = new THREE.LineGeometry();
+      geom.setPositions(positions);
+      const mat = new THREE.LineMaterial({
+        color: new THREE.Color(point.color),
+        linewidth: lineWidth,
+        resolution: new THREE.Vector2(window.innerWidth*window.devicePixelRatio, window.innerHeight*window.devicePixelRatio),
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        toneMapped: false
+      });
+      mesh = new THREE.Line2(geom, mat);
+      mesh.computeLineDistances();
+    } else {
+      // Fallback: plain Line
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      const mat = new THREE.LineBasicMaterial({
+        color: new THREE.Color(point.color),
+        transparent: true,
+        opacity: 0,
+        depthWrite: false
+      });
+      mesh = new THREE.Line(geom, mat);
+    }
+
+    mesh.position.set(point.position.x, point.position.y, 0);
+    mesh.rotation.z = point.rotation;
+    mesh.userData.timestamp = point.timestamp;
+    return mesh;
+  } catch(e) {
+    console.error('createBrushTipMesh error', e);
+    return null;
+  }
+}
+
+// ============================================================
+// SCREEN SCALE
+// ============================================================
+function getScreenScale() { return window.innerWidth < 1024 ? 0.8 : 1.2; }
+
+// ============================================================
+// GENERATING BRUSH POINTS (from DrawingCanvas.tsx addPointToStroke)
+// ============================================================
+function generateBrushPoint(position, currentDistance, visualTime, forIntro) {
+  if(!loadedShapes||loadedShapes.length===0) return null;
+  const numShapes = loadedShapes.length;
+  const cycleLength = Math.max(10, morphInterval);
+  const progress = currentDistance/cycleLength;
+  const currentStep = Math.floor(progress);
+  const morphFactor = progress-currentStep;
+
+  const palette = getSafePalette(backgroundColor);
+  if(palette.length===0) return null;
+
+  const getColorForStep = (step) => getColor(step, currentStrokeSeed, palette, backgroundColor);
+
+  const colorProgress = progress/currentStrokeColorRatio;
+  const colorStep = Math.floor(colorProgress);
+  const colorFactor = colorProgress-colorStep;
+  const c1 = new THREE.Color(getColorForStep(colorStep));
+  const c2 = new THREE.Color(getColorForStep(colorStep+1));
+  const interpolatedColor = '#'+c1.lerpHSL(c2, -(Math.cos(Math.PI*colorFactor)-1)/2).getHexString();
+
+  const getJitterScale = (step) => {
+    const x = Math.sin(step*12.9898+currentStrokeSeed)*43758.5453;
+    return 1+(x-Math.floor(x)-0.5)*2*(brushJitter.scale/100);
+  };
+  const jScale = THREE.MathUtils.lerp(getJitterScale(currentStep), getJitterScale(currentStep+1), morphFactor);
+
+  const jx = (Math.random()-0.5)*2*brushJitter.position;
+  const jy = (Math.random()-0.5)*2*brushJitter.position;
+
+  return {
+    position: new THREE.Vector3(position.x+jx, position.y+jy, 0),
+    id: Math.random().toString(36).substr(2,9),
+    morph: { fromIndex: currentStep%numShapes, toIndex: (currentStep+1)%numShapes, factor: morphFactor },
+    rotation: (Math.random()-0.5)*2*THREE.MathUtils.degToRad(brushJitter.rotation),
+    scale: Math.max(0.1, jScale),
+    timestamp: visualTime,
+    morphStartTime: visualTime,  // 時間ベースのモーフアニメ開始時刻
+    color: forIntro ? '#5f328c' : interpolatedColor,
+    noiseSeed: Math.random()*10000
+  };
+}
+
+function addPointsFromTo(from, to, visualTime, forIntro) {
+  if(!loadedShapes||loadedShapes.length===0) return;
+  const dist = from.distanceTo(to);
+  if(dist < 0.1 && currentStrokePoints.length > 0) return;
+  const stepSize = Math.max(0.5, brushSize * (0.004 + (100 - brushDensity) * 0.00396));
+  const steps = Math.max(1, Math.ceil(dist/stepSize));
+  const newPts = [];
+  for(let i=1;i<=steps;i++){
+    const t=i/steps;
+    const pos = new THREE.Vector3().lerpVectors(from, to, t);
+    totalDistance += dist/steps;
+    const bp = generateBrushPoint(pos, totalDistance, visualTime, forIntro);
+    if(bp) newPts.push(bp);
+  }
+  for(const bp of newPts){
+    currentStrokePoints.push(bp);
+    const screenScale = getScreenScale();
+    // 初期factor=0から描画開始（morphStartTimeから時間経過で変化）
+    const mesh = createBrushTipMesh(bp, loadedShapes, brushSize, brushLineWidth, screenScale, 0);
+    if(mesh && currentStrokeGroup) {
+      mesh.userData.brushPoint = bp;       // アニメ更新用に参照を保持
+      mesh.userData.strokeSize = brushSize;
+      mesh.userData.strokeLineWidth = brushLineWidth;
+      currentStrokeGroup.add(mesh);
+    }
+  }
+  lastCursorPos = to.clone();
+}
+
+function beginStroke() {
+  currentStrokeGroup = new THREE.Group();
+  scene.add(currentStrokeGroup);
+  currentStrokePoints = [];
+  totalDistance = 0;
+  lastCursorPos = null;
+  currentStrokeSeed = Math.random()*1000;
+  currentStrokeColorRatio = 1.5+Math.random()*0.8;
+}
+
+function endStroke() {
+  if(currentStrokePoints.length > 0 && currentStrokeGroup) {
+    strokes.push({
+      id: Math.random().toString(36).substr(2,9),
+      points: [...currentStrokePoints],
+      size: brushSize,
+      lineWidth: brushLineWidth,
+      opacity: brushOpacity,
+      threeGroup: currentStrokeGroup
+    });
+  } else if(currentStrokeGroup) {
+    scene.remove(currentStrokeGroup);
+  }
+  currentStrokeGroup = null;
+  currentStrokePoints = [];
+  lastCursorPos = null;
+}
+
+// ============================================================
+// AUTO ANIMATION MODE
+// ============================================================
+// 自動モード用の永続メッシュ（毎フレームジオメトリだけ差し替える）
+let autoMesh = null;
+let autoMeshGroup = null;
+
+// 軌跡レイヤー: {mesh, spawnTime} の配列
+let autoTrail = [];
+const AUTO_TRAIL_COUNT = 8;    // 同時に重ねる枚数
+const AUTO_TRAIL_FADE = 2600;  // ms: 古いスナップが消えるまでの時間
+// スナップを追加する間隔 = morphTimeDuration / AUTO_TRAIL_COUNT
+// → 常にtrailCount枚が等間隔でフェードしながら重なる
+
+function makeAutoMesh(positions, color) {
+  const res = new THREE.Vector2(
+    window.innerWidth * window.devicePixelRatio,
+    window.innerHeight * window.devicePixelRatio
+  );
+  if(typeof THREE.LineGeometry !== 'undefined' && typeof THREE.Line2 !== 'undefined') {
+    const geom = new THREE.LineGeometry();
+    geom.setPositions(positions);
+    const mat = new THREE.LineMaterial({
+      color: new THREE.Color(color),
+      linewidth: brushLineWidth,
+      resolution: res,
+      transparent: true,
+      opacity: brushOpacity,
+      depthWrite: false,
+      toneMapped: false
+    });
+    const m = new THREE.Line2(geom, mat);
+    m.computeLineDistances();
+    return m;
+  } else {
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    const mat = new THREE.LineBasicMaterial({
+      color: new THREE.Color(color),
+      transparent: true,
+      opacity: brushOpacity,
+      depthWrite: false
+    });
+    return new THREE.Line(geom, mat);
+  }
+}
+
+function startAutoMode() {
+  if(autoLoopId) cancelAnimationFrame(autoLoopId);
+  if(loadedShapes.length === 0) return;
+
+  clearAll();
+
+  if(autoMeshGroup) { scene.remove(autoMeshGroup); autoMeshGroup = null; }
+  autoMeshGroup = new THREE.Group();
+  scene.add(autoMeshGroup);
+  autoMesh = null;
+  autoTrail = [];
+
+  const numShapes = loadedShapes.length;
+  let shapeStep = 0;
+  let lastTime = null;
+  let lastSnapshotStep = -1; // 前回スナップを撮った shapeStep（整数単位）
+
+  const getInterpolated = (step) => {
+    const cs = Math.floor(step);
+    const raw = step - cs;
+    const ef = raw < 0.5 ? 2*raw*raw : 1 - Math.pow(-2*raw+2,2)/2;
+    const fi = cs % numShapes;
+    const ti = (cs+1) % numShapes;
+    const sA = loadedShapes[fi];
+    const sB = loadedShapes[ti];
+    if(!sA) return null;
+    const pA = sA.normalizedPoints;
+    let pB = (sB && sB.normalizedPoints && sB.normalizedPoints.length===pA.length) ? sB.normalizedPoints : pA;
+    if(pB !== pA) pB = getOptimalRotatedPoints(pA, pB);
+    return { pts: lerpPoints(pA, pB, ef), color: getAutoColor(cs) };
+  };
+
+  const buildPositions = (pts, scale) => {
+    const pos = [];
+    for(const p of pts) pos.push(p.x*scale, p.y*scale, 0);
+    pos.push(pts[0].x*scale, pts[0].y*scale, 0);
+    return pos;
+  };
+
+  const tick = (now) => {
+    if(!isAutoMode) { autoLoopId = null; return; }
+    if(!lastTime) lastTime = now;
+    const elapsed = now - lastTime;
+    lastTime = now;
+
+    shapeStep += elapsed / Math.max(1, morphTimeDuration);
+
+    const screenScale = getScreenScale();
+    const finalScale = (brushSize / 10) * screenScale;
+
+    // スナップ追加間隔 = morphTimeDuration / AUTO_TRAIL_COUNT
+    const snapshotInterval = 1.0 / AUTO_TRAIL_COUNT;
+    const snapshotStepNow = Math.floor(shapeStep / snapshotInterval);
+    if(snapshotStepNow !== lastSnapshotStep) {
+      lastSnapshotStep = snapshotStepNow;
+      const data = getInterpolated(shapeStep);
+      if(data && data.pts && data.pts.length >= 3) {
+        const mesh = makeAutoMesh(buildPositions(data.pts, finalScale), data.color);
+        mesh.userData.spawnTime = now;
+        autoMeshGroup.add(mesh);
+        autoTrail.push({ mesh, spawnTime: now });
+      }
+    }
+
+    // 先頭メッシュ(最新)は常に現在のモーフ形状を追従
+    if(autoTrail.length > 0) {
+      const head = autoTrail[autoTrail.length - 1].mesh;
+      const data = getInterpolated(shapeStep);
+      if(data && data.pts && data.pts.length >= 3) {
+        const pos = buildPositions(data.pts, finalScale);
+        if(head.geometry && head.geometry.setPositions) {
+          head.geometry.setPositions(pos);
+          head.computeLineDistances();
+        }
+        if(head.material) {
+          head.material.color.set(data.color);
+          head.material.linewidth = brushLineWidth;
+          if(head.material.resolution)
+            head.material.resolution.set(
+              window.innerWidth*window.devicePixelRatio,
+              window.innerHeight*window.devicePixelRatio
+            );
+        }
+      }
+    }
+
+    // 各レイヤーの不透明度を経過時間で更新 & 古いものを削除
+    const fadeMs = Math.max(morphTimeDuration, AUTO_TRAIL_FADE);
+    autoTrail = autoTrail.filter(({ mesh, spawnTime }) => {
+      const age = now - spawnTime;
+      if(age > fadeMs) {
+        autoMeshGroup.remove(mesh);
+        if(mesh.geometry) mesh.geometry.dispose();
+        if(mesh.material) mesh.material.dispose();
+        return false;
+      }
+      if(mesh.material) {
+        // 新しいほど不透明、古いほど透明
+        const life = 1 - age / fadeMs;
+        mesh.material.opacity = brushOpacity * life;
+      }
+      return true;
+    });
+
+    // 最新1枚だけは常にフル不透明
+    if(autoTrail.length > 0) {
+      const head = autoTrail[autoTrail.length-1].mesh;
+      if(head.material) head.material.opacity = brushOpacity;
+    }
+
+    autoLoopId = requestAnimationFrame(tick);
+  };
+
+  autoLoopId = requestAnimationFrame(tick);
+}
+
+function getAutoColor(step) {
+  const palette = getSafePalette(backgroundColor);
+  if(palette.length === 0) return '#5f328c';
+  return getColor(step, 42, palette, backgroundColor);
+}
+
+function toggleAutoMode() {
+  isAutoMode = !isAutoMode;
+  const btn = document.getElementById('btn-auto');
+  if(isAutoMode) {
+    btn.classList.add('active');
+    btn.textContent = '自動 ON';
+    isDrawingActive = false;
+    if(isHovering){ isHovering=false; endStroke(); }
+    startAutoMode();
+  } else {
+    btn.classList.remove('active');
+    btn.textContent = '自動 OFF';
+    if(autoLoopId){ cancelAnimationFrame(autoLoopId); autoLoopId=null; }
+    autoTrail.forEach(({mesh})=>{ if(mesh.geometry)mesh.geometry.dispose(); if(mesh.material)mesh.material.dispose(); });
+    autoTrail=[];
+    if(autoMeshGroup){ scene.remove(autoMeshGroup); autoMeshGroup=null; autoMesh=null; }
+    clearAll();
+    isDrawingActive = true;
+  }
+}
+
+// ============================================================
+// INTRO ANIMATION (旧・未使用)
+// ============================================================
+function startIntro() {
+  if(loadedShapes.length===0) return;
+  const W=window.innerWidth, H=window.innerHeight;
+  const baseRadius = Math.min(W,H)*0.38;
+  const numCtrl = 8;
+  const startAngle = Math.random()*Math.PI*2;
+  const arcLength = Math.PI*2*(0.85+Math.random()*0.1);
+  const ctrlPts = [];
+  for(let i=0;i<=numCtrl;i++){
+    const t=i/numCtrl;
+    const angle=startAngle+t*arcLength;
+    const r=baseRadius*(1+Math.sin(t*Math.PI*2)*0.1+(Math.random()-0.5)*0.15);
+    ctrlPts.push(new THREE.Vector3(Math.cos(angle)*r, Math.sin(angle)*r, 0));
+  }
+  const curve = new THREE.CatmullRomCurve3(ctrlPts, false);
+  const duration = 2200;
+  const startTime = performance.now();
+
+  beginStroke();
+
+  const animate = () => {
+    const now = performance.now();
+    const t = Math.min(1,(now-startTime)/duration);
+    const progress = Math.pow(t,3);
+    const pt = curve.getPointAt(Math.min(progress,0.999));
+    const visualTime = Date.now();
+
+    if(lastCursorPos){
+      addPointsFromTo(lastCursorPos, pt, visualTime, true);
+    } else {
+      lastCursorPos = pt.clone();
+      addPointsFromTo(pt, pt, visualTime, true);
+    }
+
+    if(t < 1){
+      requestAnimationFrame(animate);
+    } else {
+      endStroke();
+      isIntroActive = false;
+    }
+  };
+  requestAnimationFrame(animate);
+}
+
+// ============================================================
+// MOUSE / POINTER INTERACTION
+// ============================================================
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let isHovering = false;
+
+function screenToWorld(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const nx = ((clientX-rect.left)/rect.width)*2-1;
+  const ny = -((clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera({x:nx,y:ny}, camera);
+  // For orthographic, just unproject
+  const vec = new THREE.Vector3(nx,ny,0);
+  vec.unproject(camera);
+  return new THREE.Vector3(vec.x, vec.y, 0);
+}
+
+canvas.addEventListener('mouseenter', (e)=>{
+  if(isIntroActive||!isDrawingActive) return;
+  isHovering = true;
+  const pos = screenToWorld(e.clientX, e.clientY);
+  beginStroke();
+  lastCursorPos = pos.clone();
+});
+
+canvas.addEventListener('mouseleave', (e)=>{
+  if(isHovering){ isHovering=false; endStroke(); }
+});
+
+canvas.addEventListener('mousemove', (e)=>{
+  if(isIntroActive||!isDrawingActive) return;
+  const pos = screenToWorld(e.clientX, e.clientY);
+  const visualTime = Date.now();
+  if(!isHovering){
+    isHovering=true;
+    beginStroke();
+    lastCursorPos = pos.clone();
+    return;
+  }
+  if(!currentStrokeGroup) { beginStroke(); lastCursorPos=pos.clone(); return; }
+  if(lastCursorPos) addPointsFromTo(lastCursorPos, pos, visualTime, false);
+  else lastCursorPos = pos.clone();
+});
+
+// ============================================================
+// ANIMATION LOOP
+// ============================================================
+function updateOpacities() {
+  const now = Date.now();
+  const allGroups = [...strokes.map(s=>({group:s.threeGroup,strokeOpacity:s.opacity}))];
+  if(currentStrokeGroup) allGroups.push({group:currentStrokeGroup, strokeOpacity:brushOpacity});
+
+  for(const {group, strokeOpacity} of allGroups){
+    if(!group) continue;
+    for(const child of group.children){
+      const ts = child.userData.timestamp;
+      if(!ts) continue;
+      const age = now-ts;
+      let op = strokeOpacity;
+      if(brushFadeIn.enabled && age < brushFadeIn.duration) op *= age/brushFadeIn.duration;
+      if(brushFade.enabled) op *= Math.max(0, 1-(age/brushFade.duration));
+      if(child.material) child.material.opacity = Math.max(0,Math.min(1,op));
+    }
+  }
+}
+
+function cleanupOldStrokes() {
+  const now = Date.now();
+  const maxAge = brushFade.duration+500;
+  strokes = strokes.filter(s=>{
+    if(s.points.length===0) return false;
+    const last = s.points[s.points.length-1];
+    if(last && (now-last.timestamp)>maxAge){
+      scene.remove(s.threeGroup);
+      s.threeGroup.children.forEach(c=>{ if(c.geometry)c.geometry.dispose(); if(c.material)c.material.dispose(); });
+      return false;
+    }
+    return true;
+  });
+}
+
+let lastClean = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  const now = Date.now();
+  updateOpacities();
+  updateMorphAnimations(now);
+  if(now-lastClean > 1000){ cleanupOldStrokes(); lastClean=now; }
+  renderer.setClearColor(new THREE.Color(backgroundColor), 1);
+  renderer.render(scene, camera);
+}
+
+// 時間ベースのモーフアニメーション: 各スタンプのジオメトリを毎フレーム更新
+function updateMorphAnimations(now) {
+  if(loadedShapes.length === 0) return;
+  const screenScale = getScreenScale();
+
+  const allGroups = [
+    ...strokes.map(s => ({ group: s.threeGroup, size: s.size, lw: s.lineWidth })),
+    ...(currentStrokeGroup ? [{ group: currentStrokeGroup, size: brushSize, lw: brushLineWidth }] : [])
+  ];
+
+  for(const { group, size, lw } of allGroups) {
+    if(!group) continue;
+    for(const child of group.children) {
+      const bp = child.userData.brushPoint;
+      if(!bp || !bp.morphStartTime) continue;
+
+      // 経過時間からfactorを計算 (0→1)
+      const elapsed = now - bp.morphStartTime;
+      const rawFactor = Math.min(1.0, elapsed / Math.max(1, morphTimeDuration));
+      // easeInOut で滑らかに
+      const easedFactor = rawFactor < 0.5
+        ? 2 * rawFactor * rawFactor
+        : 1 - Math.pow(-2 * rawFactor + 2, 2) / 2;
+
+      // まだ変化中 or 初回（factor=0）のときだけジオメトリ更新
+      if(rawFactor >= 1.0 && child.userData.morphDone) continue;
+
+      // 新しいジオメトリでメッシュを再構築
+      const newMesh = createBrushTipMesh(bp, loadedShapes, size, lw, screenScale, easedFactor);
+      if(newMesh) {
+        // ジオメトリだけ差し替え（positionやrotationはそのまま）
+        if(child.geometry) child.geometry.dispose();
+        child.geometry = newMesh.geometry;
+        newMesh.geometry = null; // dispose防止
+        // factorが1.0に達したらdoneフラグ
+        if(rawFactor >= 1.0) child.userData.morphDone = true;
+      }
+    }
+  }
+}
+
+animate();
+
+// ============================================================
+// UI CONTROLS
+// ============================================================
+function cycleBg() {
+  bgColorIndex = (bgColorIndex+1)%BG_COLORS.length;
+  backgroundColor = BG_COLORS[bgColorIndex];
+  // toolbar は独自の暗い背景を持つので色変更不要
+  // info はキャンバス上に表示されるので合わせる
+  const infoColor = (backgroundColor==='#e4e4e4'||backgroundColor==='#ffccff') ? '#333' : '#e4e4e4';
+  document.getElementById('info').style.color = infoColor;
+}
+
+function toggleLines() {
+  isDrawingActive = !isDrawingActive;
+  const btn = document.getElementById('btn-lines');
+  if(isDrawingActive){ btn.classList.add('active'); btn.textContent='LINES ON'; }
+  else { btn.classList.remove('active'); btn.textContent='LINES OFF'; }
+  if(!isDrawingActive && isHovering){ isHovering=false; endStroke(); }
+}
+
+function clearAll() {
+  for(const s of strokes){
+    scene.remove(s.threeGroup);
+    s.threeGroup.children.forEach(c=>{ if(c.geometry)c.geometry.dispose(); if(c.material)c.material.dispose(); });
+  }
+  strokes=[];
+  if(currentStrokeGroup){
+    scene.remove(currentStrokeGroup);
+    currentStrokeGroup.children.forEach(c=>{ if(c.geometry)c.geometry.dispose(); if(c.material)c.material.dispose(); });
+    currentStrokeGroup=null;
+  }
+  currentStrokePoints=[];
+  lastCursorPos=null;
+  isHovering=false;
+}
+
+// ============================================================
+// RESIZE
+// ============================================================
+window.addEventListener('resize', ()=>{
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.left=-window.innerWidth/2; camera.right=window.innerWidth/2;
+  camera.top=window.innerHeight/2; camera.bottom=-window.innerHeight/2;
+  camera.updateProjectionMatrix();
+});
+
+// ============================================================
+// PANEL STATE
+// ============================================================
+let panelOpen = true;
+let dragUid = null;
+
+let panelShapeDefs = DEFAULT_SHAPES_DEF.map((s,i) => ({
+  ...s, uid: 'uid_'+i, enabled: true
+}));
+
+// ---------- 開閉 ----------
+function togglePanel() {
+  panelOpen = !panelOpen;
+  const panel = document.getElementById('panel');
+  const toggle = document.getElementById('panel-toggle');
+  panel.classList.toggle('collapsed', !panelOpen);
+  toggle.innerHTML = panelOpen ? '&#x276E;' : '&#x276F;';
+}
+
+// パネル全体へのファイルドロップ
+(function() {
+  const panel = document.getElementById('panel');
+  panel.addEventListener('dragover', e => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      panel.classList.add('drag-target');
+    }
+  });
+  panel.addEventListener('dragleave', e => {
+    if (!panel.contains(e.relatedTarget)) panel.classList.remove('drag-target');
+  });
+  panel.addEventListener('drop', e => {
+    panel.classList.remove('drag-target');
+    const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.svg'));
+    if (!files.length) return;
+    // シェイプドラッグ中でないことを確認
+    if (dragUid) return;
+    e.preventDefault();
+    let done = 0;
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const items = extractPathsFromSVG(ev.target.result, file.name);
+        items.forEach(item => {
+          const uid = 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2,4);
+          panelShapeDefs.push({ id:uid, uid, name:item.name, paths:[item.d],
+            color: item.color || COLORS[panelShapeDefs.length % COLORS.length], enabled:true });
+        });
+        if (++done === files.length) { applyShapeDefs(); renderPanel(); }
+      };
+      reader.readAsText(file);
+    });
+  });
+})();
+
+// ---------- プレビュー SVG ----------
+function makePreviewSVG(pathD, color) {
+  // 全数値を取り出して大まかな bbox を推定
+  const nums = (pathD.match(/-?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/g) || []).map(Number);
+  const xs = [], ys = [];
+  for (let i = 0; i < nums.length - 1; i += 2) { xs.push(nums[i]); ys.push(nums[i+1]); }
+  if (xs.length === 0) return '';
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const W = maxX - minX || 100, H = maxY - minY || 100;
+  const pad = Math.max(W, H) * 0.12;
+  const vb = `${minX-pad} ${minY-pad} ${W+pad*2} ${H+pad*2}`;
+  const sw = Math.max(W, H) * 0.045;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}"><path d="${pathD}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+
+// ---------- パネル描画 ----------
+function renderPanel() {
+  const list = document.getElementById('shape-list');
+  list.innerHTML = '';
+  panelShapeDefs.forEach((def, idx) => {
+    const color = def.color || '#e4e4e4';
+    const pathD = def.paths[0];
+
+    const item = document.createElement('div');
+    item.className = 'shape-item' + (def.enabled ? '' : ' disabled');
+    item.draggable = true;
+    item.dataset.uid = def.uid;
+
+    // カラーピッカー用に一意なid
+    const cpId = 'cp_' + def.uid;
+
+    item.innerHTML = `
+      <div class="shape-drag-handle" title="ドラッグして並び替え">⠿</div>
+      <div class="shape-preview">${makePreviewSVG(pathD, color)}</div>
+      <div class="shape-center">
+        <div class="shape-name" title="${def.name}">${def.name}</div>
+        <div class="shape-num-label">#${idx+1}</div>
+      </div>
+      <div class="shape-actions">
+        <label class="color-swatch" title="色を変更" style="background:${color}">
+          <input type="color" id="${cpId}" value="${color.length===7?color:'#e4e4e4'}"
+            onchange="changeShapeColor('${def.uid}',this.value)">
+        </label>
+        <button class="shape-act-btn ${def.enabled?'on':''}" title="${def.enabled?'無効にする':'有効にする'}"
+          onclick="toggleShape('${def.uid}')">${def.enabled?'◉':'◎'}</button>
+        <button class="shape-act-btn del" title="削除" onclick="removeShape('${def.uid}')">✕</button>
+      </div>
+    `;
+
+    item.addEventListener('dragstart', onDragStart);
+    item.addEventListener('dragover',  onDragOver);
+    item.addEventListener('dragleave', onDragLeave);
+    item.addEventListener('drop',      onDrop);
+    item.addEventListener('dragend',   onDragEnd);
+
+    list.appendChild(item);
+  });
+}
+
+// ---------- ドラッグ並び替え ----------
+function onDragStart(e) {
+  dragUid = e.currentTarget.dataset.uid;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+function onDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.shape-item').forEach(el =>
+    el.classList.remove('drag-over-top','drag-over-bottom'));
+  const rect = e.currentTarget.getBoundingClientRect();
+  e.currentTarget.classList.add(e.clientY < rect.top + rect.height/2 ? 'drag-over-top' : 'drag-over-bottom');
+}
+function onDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over-top','drag-over-bottom');
+}
+function onDrop(e) {
+  e.preventDefault();
+  document.querySelectorAll('.shape-item').forEach(el =>
+    el.classList.remove('drag-over-top','drag-over-bottom'));
+  const targetUid = e.currentTarget.dataset.uid;
+  if (!dragUid || dragUid === targetUid) return;
+
+  const fromIdx = panelShapeDefs.findIndex(s => s.uid === dragUid);
+  const toIdx   = panelShapeDefs.findIndex(s => s.uid === targetUid);
+  if (fromIdx < 0 || toIdx < 0) return;
+
+  const insertAfter = e.clientY >= e.currentTarget.getBoundingClientRect().top + e.currentTarget.getBoundingClientRect().height/2;
+  const [moved] = panelShapeDefs.splice(fromIdx, 1);
+  let dest = panelShapeDefs.findIndex(s => s.uid === targetUid);
+  if (insertAfter) dest += 1;
+  panelShapeDefs.splice(dest, 0, moved);
+
+  applyShapeDefs();
+  renderPanel();
+}
+function onDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.shape-item').forEach(el =>
+    el.classList.remove('drag-over-top','drag-over-bottom'));
+}
+
+// ---------- シェイプ操作 ----------
+function toggleShape(uid) {
+  const s = panelShapeDefs.find(s => s.uid === uid);
+  if (s) { s.enabled = !s.enabled; applyShapeDefs(); renderPanel(); }
+}
+function removeShape(uid) {
+  panelShapeDefs = panelShapeDefs.filter(s => s.uid !== uid);
+  applyShapeDefs(); renderPanel();
+}
+function changeShapeColor(uid, newColor) {
+  const s = panelShapeDefs.find(s => s.uid === uid);
+  if (s) {
+    s.color = newColor;
+    applyShapeDefs(); renderPanel();
+  }
+}
+function resetToDefault() {
+  panelShapeDefs = DEFAULT_SHAPES_DEF.map((s,i) => ({...s, uid:'uid_'+i, enabled:true}));
+  applyShapeDefs(); renderPanel();
+}
+
+// ---------- loadedShapes を再構築 ----------
+function applyShapeDefs() {
+  const enabled = panelShapeDefs.filter(s => s.enabled);
+  const valid = [];
+  for (const def of enabled) {
+    const pts = normalizePathToPoints(def.paths[0]);
+    if (pts.length >= 3)
+      valid.push({ id: def.id, name: def.name, paths: def.paths, normalizedPoints: pts, color: def.color });
+  }
+  loadedShapes = valid;
+  // シェイプが変わったら自動モードを再起動（autoMeshも初期化）
+  if(isAutoMode && loadedShapes.length > 0) {
+    autoMesh = null;
+    autoTrail = [];
+    startAutoMode();
+  }
+}
+
+// ---------- SVGファイル読み込み ----------
+document.getElementById('file-input').addEventListener('change', (e) => {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  let done = 0;
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const items = extractPathsFromSVG(ev.target.result, file.name);
+      items.forEach(item => {
+        const uid = 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2,4);
+        panelShapeDefs.push({ id: uid, uid, name: item.name, paths: [item.d],
+          color: item.color || COLORS[panelShapeDefs.length % COLORS.length], enabled: true });
+      });
+      if (++done === files.length) { applyShapeDefs(); renderPanel(); }
+    };
+    reader.readAsText(file);
+  });
+  e.target.value = '';
+});
+
+// SVGテキストからpathデータを抽出
+function extractPathsFromSVG(svgText, filename) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgText, 'image/svg+xml');
+  const baseName = filename.replace(/\.svg$/i, '');
+  const results = [];
+
+  const pathEls = doc.querySelectorAll('path');
+  pathEls.forEach((el, i) => {
+    const d = el.getAttribute('d');
+    if (!d || !d.trim()) return;
+    // 色: fill → stroke → fallback の優先順
+    let color = '';
+    const fill   = el.getAttribute('fill');
+    const stroke = el.getAttribute('stroke');
+    const style  = el.getAttribute('style') || '';
+    const fillStyle   = style.match(/fill\s*:\s*([^;]+)/)?.[1]?.trim();
+    const strokeStyle = style.match(/stroke\s*:\s*([^;]+)/)?.[1]?.trim();
+    color = fillStyle || fill || strokeStyle || stroke || '';
+    if (!color || color === 'none') color = COLORS[results.length % COLORS.length];
+    const name = el.getAttribute('id') || (pathEls.length > 1 ? `${baseName}_${i+1}` : baseName);
+    results.push({ d, name, color });
+  });
+
+  // pathがなければrectを変換
+  if (results.length === 0) {
+    doc.querySelectorAll('rect').forEach((el, i) => {
+      const x = +(el.getAttribute('x')||0), y = +(el.getAttribute('y')||0);
+      const w = +(el.getAttribute('width')||0), h = +(el.getAttribute('height')||0);
+      if (w > 0 && h > 0)
+        results.push({ d: `M${x},${y}H${x+w}V${y+h}H${x}Z`,
+          name: `${baseName}_rect${i}`, color: COLORS[i % COLORS.length] });
+    });
+  }
+  return results;
+}
+
+// ============================================================
+// BOOT
+// ============================================================
+renderPanel();
+loadShapes(); // applyShapeDefs() → startIntro() の順に呼ばれる
+</script>
+</body>
+</html>
